@@ -43,6 +43,8 @@ show_usage() {
     echo "  init     Initialize a new local git repository"
     echo "  export   Export workflows to the local repository"
     echo "  push     Push changes to GitHub"
+    echo "  pull     Pull latest changes from GitHub"
+    echo "  import   Import workflows from local repository to n8n"
     echo ""
     echo "Init Options:"
     echo "  -d, --dir PATH         Local directory path (default: ./n8n-workflows)"
@@ -59,6 +61,15 @@ show_usage() {
     echo "  -d, --dir PATH         Local repository directory"
     echo "  -m, --message TEXT     Commit message (default: 'Update workflows')"
     echo ""
+    echo "Pull Options:"
+    echo "  -d, --dir PATH         Local repository directory"
+    echo ""
+    echo "Import Options:"
+    echo "  -d, --dir PATH         Local repository directory"
+    echo "  -a, --all             Import all workflow files (with prompts)"
+    echo "  -f, --file PATH       Import specific workflow file"
+    echo "  -y, --yes             Auto-confirm all prompts (skip confirmations)"
+    echo ""
     echo "Examples:"
     echo "  # Initialize a new repository"
     echo "  $0 init --repo https://github.com/user/workflows.git --dir ./my-workflows"
@@ -72,10 +83,20 @@ show_usage() {
     echo "  # Push changes to GitHub"
     echo "  $0 push --dir ./my-workflows --message 'Added new automation'"
     echo ""
+    echo "  # Pull latest changes from GitHub"
+    echo "  $0 pull --dir ./my-workflows"
+    echo ""
+    echo "  # Import workflows to n8n"
+    echo "  $0 import --all --dir ./my-workflows"
+    echo "  $0 import --file workflows/specific_workflow.json"
+    echo "  $0 import --all --yes  # Auto-confirm all imports"
+    echo ""
     echo "  # Complete workflow (can be chained):"
     echo "  $0 init --repo https://github.com/user/workflows.git"
     echo "  $0 export --all"
     echo "  $0 push --message 'Initial workflow backup'"
+    echo "  $0 pull"
+    echo "  $0 import --all"
 }
 
 # Function to check if n8n command is available
@@ -329,7 +350,262 @@ export_workflows() {
     print_status "Next step: $0 push --dir $repo_dir --message 'Your commit message'"
 }
 
-# Function to push to GitHub
+# Function to pull from GitHub
+pull_from_github() {
+    local repo_dir="./n8n-workflows"
+    
+    # Parse pull-specific arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -d|--dir)
+                repo_dir="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            *)
+                print_error "Unknown pull option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Check if repository directory exists
+    if [ ! -d "$repo_dir" ]; then
+        print_error "Repository directory does not exist: $repo_dir"
+        print_error "Run 'init' command first"
+        exit 1
+    fi
+    
+    if [ ! -d "$repo_dir/.git" ]; then
+        print_error "Not a git repository: $repo_dir"
+        print_error "Run 'init' command first"
+        exit 1
+    fi
+    
+    cd "$repo_dir"
+    print_status "Working in repository: $(pwd)"
+    
+    # Get current branch
+    local current_branch=$(git branch --show-current)
+    print_status "Pulling from branch: $current_branch"
+    
+    # Check if there are local changes
+    if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        print_warning "You have local changes. Consider committing or stashing them first."
+        print_status "Local changes:"
+        git status --porcelain
+        read -p "Continue with pull anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Pull cancelled by user"
+            exit 0
+        fi
+    fi
+    
+    # Pull from remote
+    print_status "Pulling latest changes from GitHub..."
+    if git pull origin "$current_branch"; then
+        print_success "Successfully pulled from GitHub!"
+        
+        # Show what changed
+        print_status "Recent changes:"
+        git log --oneline -5
+        
+        # Show workflow files
+        if [ -d "workflows" ] && [ "$(find workflows -name "*.json" | wc -l)" -gt 0 ]; then
+            print_status "Available workflow files:"
+            find workflows -name "*.json" -exec basename {} \;
+            print_status "Use 'import' command to load workflows into n8n"
+        fi
+    else
+        print_error "Failed to pull from GitHub"
+        print_error "This might be due to:"
+        print_error "  1. Network connectivity issues"
+        print_error "  2. Authentication problems"
+        print_error "  3. Merge conflicts"
+        exit 1
+    fi
+}
+
+# Function to import workflows to n8n
+import_workflows() {
+    local repo_dir="./n8n-workflows"
+    local import_all=false
+    local specific_file=""
+    local auto_yes=false
+    
+    # Parse import-specific arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -d|--dir)
+                repo_dir="$2"
+                shift 2
+                ;;
+            -a|--all)
+                import_all=true
+                shift
+                ;;
+            -f|--file)
+                specific_file="$2"
+                shift 2
+                ;;
+            -y|--yes)
+                auto_yes=true
+                shift
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            *)
+                print_error "Unknown import option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Validate arguments
+    if [ "$import_all" = false ] && [ -z "$specific_file" ]; then
+        print_error "Either --all or --file must be specified"
+        show_usage
+        exit 1
+    fi
+    
+    # Check if repository directory exists
+    if [ ! -d "$repo_dir" ]; then
+        print_error "Repository directory does not exist: $repo_dir"
+        exit 1
+    fi
+    
+    cd "$repo_dir"
+    print_status "Working in repository: $(pwd)"
+    
+    # Check if workflows directory exists
+    if [ ! -d "workflows" ]; then
+        print_error "Workflows directory not found. Run 'export' command first."
+        exit 1
+    fi
+    
+    # Safety warning (unless auto-yes is enabled)
+    if [ "$auto_yes" = false ]; then
+        print_warning "This will import workflows into n8n and may overwrite existing workflows with the same IDs."
+        print_warning "Consider exporting your current workflows first as a backup."
+        read -p "Do you want to continue? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Import cancelled by user"
+            exit 0
+        fi
+    else
+        print_status "Auto-confirmation enabled - skipping safety prompts"
+        print_warning "This will import workflows and may overwrite existing ones with the same IDs"
+    fi
+    
+    local imported_count=0
+    local skipped_count=0
+    
+    if [ "$import_all" = true ]; then
+        # Import all workflow files
+        print_status "Scanning for workflow files..."
+        
+        # Find all JSON files in workflows directory
+        local workflow_files=($(find workflows -name "*.json" -type f))
+        
+        if [ ${#workflow_files[@]} -eq 0 ]; then
+            print_warning "No workflow files found in workflows/ directory"
+            exit 0
+        fi
+        
+        print_status "Found ${#workflow_files[@]} workflow files:"
+        for file in "${workflow_files[@]}"; do
+            print_status "  - $(basename "$file")"
+        done
+        echo
+        
+        # Import each file with confirmation (unless auto-yes)
+        for file in "${workflow_files[@]}"; do
+            local filename=$(basename "$file")
+            local should_import=false
+            
+            if [ "$auto_yes" = true ]; then
+                should_import=true
+                print_status "Auto-importing $filename..."
+            else
+                read -p "Import '$filename'? (y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    should_import=true
+                fi
+            fi
+            
+            if [ "$should_import" = true ]; then
+                if n8n import:workflow --input="$file"; then
+                    print_success "Imported $filename"
+                    ((imported_count++))
+                else
+                    print_error "Failed to import $filename"
+                fi
+            else
+                print_status "Skipped $filename"
+                ((skipped_count++))
+            fi
+            echo
+        done
+        
+    else
+        # Import specific file
+        if [ ! -f "$specific_file" ]; then
+            print_error "File not found: $specific_file"
+            exit 1
+        fi
+        
+        local filename=$(basename "$specific_file")
+        print_status "Importing specific file: $filename"
+        
+        local should_import=false
+        
+        if [ "$auto_yes" = true ]; then
+            should_import=true
+            print_status "Auto-importing $filename..."
+        else
+            read -p "Import '$filename'? This may overwrite an existing workflow. (y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                should_import=true
+            fi
+        fi
+        
+        if [ "$should_import" = true ]; then
+            if n8n import:workflow --input="$specific_file"; then
+                print_success "Imported $filename"
+                ((imported_count++))
+            else
+                print_error "Failed to import $filename"
+                exit 1
+            fi
+        else
+            print_status "Import cancelled by user"
+            exit 0
+        fi
+    fi
+    
+    # Summary
+    print_success "Import completed!"
+    print_status "Summary: $imported_count imported, $skipped_count skipped"
+    
+    if [ $imported_count -gt 0 ]; then
+        print_status "Imported workflows should now be available in your n8n instance"
+        print_status "You may need to:"
+        print_status "  - Configure credentials for the imported workflows"
+        print_status "  - Activate the workflows if needed"
+        print_status "  - Test the workflows to ensure they work correctly"
+    fi
+}
 push_to_github() {
     local repo_dir="./n8n-workflows"
     local commit_message="Update workflows"
@@ -436,6 +712,13 @@ main() {
             ;;
         push)
             push_to_github "$@"
+            ;;
+        pull)
+            pull_from_github "$@"
+            ;;
+        import)
+            check_n8n_command
+            import_workflows "$@"
             ;;
         -h|--help|help)
             show_usage
