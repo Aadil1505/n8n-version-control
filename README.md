@@ -23,9 +23,9 @@ This script provides a clean, five-phase approach to managing n8n workflow backu
 
 1. Download the script:
 ```bash
-curl -O https://raw.githubusercontent.com/yourusername/repo/main/n8n-to-github.sh
+curl -O https://raw.githubusercontent.com/Aadil1505/n8n-version-control/refs/heads/main/n8n-to-github.sh
 # OR
-wget https://raw.githubusercontent.com/yourusername/repo/main/n8n-to-github.sh
+wget https://raw.githubusercontent.com/Aadil1505/n8n-version-control/refs/heads/main/n8n-to-github.sh
 ```
 
 2. Make it executable:
