@@ -41,12 +41,18 @@ show_usage() {
     echo ""
     echo "Commands:"
     echo "  init     Initialize a new local git repository"
+    echo "  clone    Clone an existing GitHub repository"
     echo "  export   Export workflows to the local repository"
     echo "  push     Push changes to GitHub"
     echo "  pull     Pull latest changes from GitHub"
     echo "  import   Import workflows from local repository to n8n"
     echo ""
     echo "Init Options:"
+    echo "  -d, --dir PATH         Local directory path (default: ./n8n-workflows)"
+    echo "  -r, --repo URL         GitHub repository URL"
+    echo "  -b, --branch NAME      Git branch name (default: main)"
+    echo ""
+    echo "Clone Options:"
     echo "  -d, --dir PATH         Local directory path (default: ./n8n-workflows)"
     echo "  -r, --repo URL         GitHub repository URL"
     echo "  -b, --branch NAME      Git branch name (default: main)"
@@ -73,6 +79,9 @@ show_usage() {
     echo "Examples:"
     echo "  # Initialize a new repository"
     echo "  $0 init --repo https://github.com/user/workflows.git --dir ./my-workflows"
+    echo ""
+    echo "  # Clone an existing repository"
+    echo "  $0 clone --repo https://github.com/user/workflows.git --dir ./my-workflows"
     echo ""
     echo "  # Export all workflows to existing repository"
     echo "  $0 export --all --dir ./my-workflows"
@@ -234,7 +243,104 @@ EOF
     print_status "  2. Push to GitHub: $0 push --dir $repo_dir"
 }
 
-# Function to export workflows
+# Function to clone existing repository
+clone_repository() {
+    local repo_dir="./n8n-workflows"
+    local repo_url=""
+    local branch="main"
+    
+    # Parse clone-specific arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -d|--dir)
+                repo_dir="$2"
+                shift 2
+                ;;
+            -r|--repo)
+                repo_url="$2"
+                shift 2
+                ;;
+            -b|--branch)
+                branch="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            *)
+                print_error "Unknown clone option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [ -z "$repo_url" ]; then
+        print_error "Repository URL is required for clone. Use --repo option."
+        exit 1
+    fi
+    
+    print_status "Cloning existing repository to: $repo_dir"
+    print_status "Repository URL: $repo_url"
+    print_status "Branch: $branch"
+    
+    # Check if directory already exists
+    if [ -d "$repo_dir" ]; then
+        print_warning "Directory already exists: $repo_dir"
+        read -p "Do you want to remove it and clone fresh? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf "$repo_dir"
+            print_status "Removed existing directory"
+        else
+            print_status "Aborted by user"
+            exit 0
+        fi
+    fi
+    
+    # Clone the repository
+    print_status "Cloning repository..."
+    if git clone "$repo_url" "$repo_dir"; then
+        print_success "Repository cloned successfully!"
+        
+        cd "$repo_dir"
+        
+        # Switch to specified branch if not main
+        if [ "$branch" != "main" ] && [ "$branch" != "master" ]; then
+            if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+                print_status "Checking out branch: $branch"
+                git checkout "$branch"
+            else
+                print_status "Creating new branch: $branch"
+                git checkout -b "$branch"
+            fi
+        fi
+        
+        # Ensure directories exist
+        mkdir -p "$WORKFLOWS_DIR"
+        mkdir -p "$CREDENTIALS_DIR"
+        
+        print_status "Repository structure:"
+        ls -la
+        
+        print_success "Clone completed successfully!"
+        print_status "Next steps:"
+        print_status "  1. Export workflows: $0 export --all --dir $repo_dir"
+        print_status "  2. Push to GitHub: $0 push --dir $repo_dir"
+        print_status "  Or import existing workflows: $0 import --all --dir $repo_dir"
+        
+    else
+        print_error "Failed to clone repository"
+        print_error "Please check:"
+        print_error "  1. Repository URL is correct"
+        print_error "  2. You have access to the repository"
+        print_error "  3. Your GitHub authentication is set up"
+        exit 1
+    fi
+}
+
+
 export_workflows() {
     local repo_dir="./n8n-workflows"
     local workflow_id=""
@@ -705,6 +811,9 @@ main() {
     case $command in
         init)
             init_repository "$@"
+            ;;
+        clone)
+            clone_repository "$@"
             ;;
         export)
             check_n8n_command

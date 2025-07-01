@@ -4,13 +4,14 @@ A bash script to backup and version control your n8n workflows by exporting them
 
 ## Overview
 
-This script provides a clean, five-phase approach to managing n8n workflow backups:
+This script provides a clean, six-phase approach to managing n8n workflow backups:
 
-1. **Initialize** - Set up a local git repository linked to GitHub
-2. **Export** - Extract workflows from n8n to local files
-3. **Push** - Upload changes to GitHub with proper versioning
-4. **Pull** - Download latest changes from GitHub
-5. **Import** - Load workflows from local files back into n8n
+1. **Initialize** - Set up a new local git repository linked to GitHub
+2. **Clone** - Download an existing GitHub repository with workflows
+3. **Export** - Extract workflows from n8n to local files
+4. **Push** - Upload changes to GitHub with proper versioning
+5. **Pull** - Download latest changes from GitHub
+6. **Import** - Load workflows from local files back into n8n
 
 ## Prerequisites
 
@@ -42,8 +43,9 @@ sudo mv n8n-to-github.sh /usr/local/bin/n8n-backup
 
 ### Complete Workflow (First Time Setup)
 
+**For a NEW repository:**
 ```bash
-# 1. Initialize repository
+# 1. Initialize new repository
 ./n8n-to-github.sh init --repo https://github.com/username/n8n-workflows.git
 
 # 2. Export all workflows
@@ -51,12 +53,18 @@ sudo mv n8n-to-github.sh /usr/local/bin/n8n-backup
 
 # 3. Push to GitHub
 ./n8n-to-github.sh push --message "Initial workflow backup"
+```
 
-# 4. Later: Pull updates from another location
-./n8n-to-github.sh pull
+**For an EXISTING repository:**
+```bash
+# 1. Clone existing repository
+./n8n-to-github.sh clone --repo https://github.com/username/n8n-workflows.git
 
-# 5. Import workflows into n8n
-./n8n-to-github.sh import --all
+# 2. Export all workflows
+./n8n-to-github.sh export --all
+
+# 3. Push to GitHub
+./n8n-to-github.sh push --message "Added new workflows"
 ```
 
 ### Regular Updates
@@ -108,6 +116,39 @@ my-backup/
 └── credentials/       # Credential storage (optional)
 ```
 
+### `clone` - Clone Existing Repository
+
+Downloads an existing GitHub repository that already contains workflows.
+
+```bash
+./n8n-to-github.sh clone [options]
+```
+
+**Options:**
+- `-r, --repo URL` - GitHub repository URL (required)
+- `-d, --dir PATH` - Local directory path (default: `./n8n-workflows`)
+- `-b, --branch NAME` - Git branch name (default: `main`)
+
+**Example:**
+```bash
+./n8n-to-github.sh clone \
+  --repo https://github.com/myuser/workflows.git \
+  --dir ./my-backup \
+  --branch production
+```
+
+**When to use:**
+- The GitHub repository **already exists** and has content
+- You want to download existing workflows to a new machine
+- You're collaborating and need to get someone else's workflows
+- You previously created workflows and want to work with them on a different machine
+
+**What it does:**
+- Downloads the entire repository with all existing workflows
+- Sets up the proper directory structure
+- Switches to the specified branch
+- Shows available workflows for import
+
 ### `export` - Export Workflows
 
 Extracts workflows from n8n and saves them as JSON files.
@@ -133,6 +174,11 @@ Extracts workflows from n8n and saves them as JSON files.
 # Export with credentials (be careful!)
 ./n8n-to-github.sh export --all --include-creds
 ```
+
+**File Naming:**
+All exported workflows use consistent naming: `workflow_[ID].json`
+- Individual export: `workflow_gCrLpxSIpaxfuXBr.json`
+- Bulk export: `workflow_gCrLpxSIpaxfuXBr.json` (same format)
 
 ### `pull` - Pull from GitHub
 
@@ -210,10 +256,49 @@ Commits changes and uploads them to GitHub.
   --message "Added customer onboarding automation"
 ```
 
+## When to Use Each Command
+
+### `init` vs `clone` - Which should I use?
+
+**Use `init` when:**
+- Creating a **brand new** GitHub repository
+- Starting completely fresh
+- The GitHub repository is empty or doesn't exist yet
+
+**Use `clone` when:**
+- The GitHub repository **already exists** with workflows
+- You want to work with existing workflows on a new machine
+- You're joining a team and need existing workflows
+- You previously backed up workflows and want to access them
+
+### Common Scenarios
+
+**Scenario 1: First time backup (new repository)**
+```bash
+# Create new repository and back up workflows
+./n8n-to-github.sh init --repo https://github.com/user/new-workflows.git
+./n8n-to-github.sh export --all
+./n8n-to-github.sh push --message "Initial backup"
+```
+
+**Scenario 2: Working with existing backups**
+```bash
+# Download existing workflows
+./n8n-to-github.sh clone --repo https://github.com/user/existing-workflows.git
+./n8n-to-github.sh import --all
+```
+
 ## Usage Patterns
+```bash
+# Work with existing repository
+./n8n-to-github.sh clone --repo https://github.com/user/workflows.git
+./n8n-to-github.sh export --workflow-id NEW_ID
+./n8n-to-github.sh push --message "Added new workflow"
+```
 
 ### Pattern 1: Complete Workflow Management
 
+**Starting fresh (new repository):**
 ```bash
 # Machine A: Create and backup workflows
 ./n8n-to-github.sh init --repo https://github.com/user/workflows.git
@@ -221,51 +306,58 @@ Commits changes and uploads them to GitHub.
 ./n8n-to-github.sh push --message "Initial backup"
 
 # Machine B: Download and import workflows
-./n8n-to-github.sh init --repo https://github.com/user/workflows.git
-./n8n-to-github.sh pull
+./n8n-to-github.sh clone --repo https://github.com/user/workflows.git
 ./n8n-to-github.sh import --all
+```
 
-# Regular updates on either machine
+**Working with existing repository:**
+```bash
+# Machine A: Work with existing workflows
+./n8n-to-github.sh clone --repo https://github.com/user/workflows.git
 ./n8n-to-github.sh export --all
 ./n8n-to-github.sh push --message "Updated workflows"
-./n8n-to-github.sh pull  # on other machine
-./n8n-to-github.sh import --all  # on other machine
+
+# Machine B: Get updates
+./n8n-to-github.sh pull
+./n8n-to-github.sh import --all
 ```
 
 ### Pattern 2: Automated Synchronization
 
 ```bash
-# Create an automated sync script
+# Create an automated sync script for existing repository
 #!/bin/bash
 echo "Syncing n8n workflows..."
-./n8n-to-github.sh pull
-./n8n-to-github.sh import --all --yes  # Auto-confirm all imports
-./n8n-to-github.sh export --all
-./n8n-to-github.sh push --message "Auto-sync $(date)"
+./n8n-to-github.sh clone --repo https://github.com/user/workflows.git --dir ./temp-sync
+./n8n-to-github.sh import --all --yes --dir ./temp-sync  # Auto-confirm imports
+./n8n-to-github.sh export --all --dir ./temp-sync
+./n8n-to-github.sh push --dir ./temp-sync --message "Auto-sync $(date)"
+rm -rf ./temp-sync
 echo "Sync completed!"
 ```
 
 ### Pattern 3: Specific Workflow Updates
 
 ```bash
-# After creating/modifying a specific workflow
+# After creating/modifying a specific workflow in existing repo
+./n8n-to-github.sh clone --repo https://github.com/user/workflows.git  # if not already cloned
 ./n8n-to-github.sh export --workflow-id NEW_WORKFLOW_ID
 ./n8n-to-github.sh push --message "Added new email automation workflow"
 
 # On another machine, get the specific workflow
 ./n8n-to-github.sh pull
-./n8n-to-github.sh import --file workflows/NEW_WORKFLOW_NAME.json
+./n8n-to-github.sh import --file workflows/workflow_NEW_WORKFLOW_ID.json
 ```
 
 ### Pattern 4: Multiple Repositories
 
 ```bash
-# Production workflows
-./n8n-to-github.sh init --repo https://github.com/user/prod-workflows.git --dir ./prod
+# Production workflows (existing repo)
+./n8n-to-github.sh clone --repo https://github.com/user/prod-workflows.git --dir ./prod
 ./n8n-to-github.sh export --workflow-id PROD_ID --dir ./prod
 ./n8n-to-github.sh push --dir ./prod --message "Production update"
 
-# Development workflows  
+# Development workflows (new repo)
 ./n8n-to-github.sh init --repo https://github.com/user/dev-workflows.git --dir ./dev
 ./n8n-to-github.sh export --workflow-id DEV_ID --dir ./dev
 ./n8n-to-github.sh push --dir ./dev --message "Development update"
@@ -282,13 +374,17 @@ docker cp n8n-to-github.sh n8n-container:/tmp/
 # Execute inside container
 docker exec -u node -it n8n-container bash
 cd /tmp
+
+# For new repository
 ./n8n-to-github.sh init --repo https://github.com/user/workflows.git
 ./n8n-to-github.sh export --all
 ./n8n-to-github.sh push --message "Docker backup"
 
-# Later: Pull and import on the same or different container
-./n8n-to-github.sh pull
+# For existing repository
+./n8n-to-github.sh clone --repo https://github.com/user/workflows.git
 ./n8n-to-github.sh import --all
+./n8n-to-github.sh export --all
+./n8n-to-github.sh push --message "Docker sync"
 ```
 
 ## GitHub Authentication
@@ -409,10 +505,20 @@ which n8n
 docker exec -it n8n-container bash
 ```
 
-**Error: "Not a git repository"**
+**Error: "Repository directory does not exist"**
 ```bash
-# Run init command first
+# Use clone for existing repositories
+./n8n-to-github.sh clone --repo YOUR_REPO_URL
+# Or init for new repositories
 ./n8n-to-github.sh init --repo YOUR_REPO_URL
+```
+
+**Error: "divergent branches" during pull**
+```bash
+# This happens when using init with existing repository
+# Solution: Use clone instead
+rm -rf ./n8n-workflows
+./n8n-to-github.sh clone --repo YOUR_REPO_URL
 ```
 
 **Error: "No changes detected"**
@@ -461,6 +567,13 @@ set -x  # Enable debug mode
 MIT License - feel free to modify and distribute.
 
 ## Changelog
+
+### v2.2.0
+- Added `clone` command for existing repositories
+- Fixed divergent branches issue when working with existing repos
+- Standardized workflow file naming (`workflow_[ID].json` for all exports)
+- Added clear guidance on when to use `init` vs `clone`
+- Enhanced documentation with practical scenarios
 
 ### v2.1.0
 - Added `pull` command to download latest changes from GitHub
